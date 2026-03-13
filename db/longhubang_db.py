@@ -33,9 +33,13 @@ class LonghubangDatabase:
     
     def init_database(self):
         """初始化数据库表"""
+        import os
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
         # 龙虎榜原始数据表
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS longhubang_records (
