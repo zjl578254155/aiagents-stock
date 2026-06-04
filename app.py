@@ -23,6 +23,17 @@ from ui.longhubang_ui import display_longhubang
 from ui.smart_monitor_ui import smart_monitor_ui
 from ui.news_flow_ui import display_news_flow_monitor
 
+# Token用量追踪回调注册（可插拔）
+try:
+    if config.TOKEN_TRACKING_ENABLED:
+        from services.token_usage_service import token_usage_service
+        from core.deepseek_client import DeepSeekClient
+        from interfaces.smart_monitor_deepseek import SmartMonitorDeepSeek
+        DeepSeekClient._usage_callback = token_usage_service.on_usage
+        SmartMonitorDeepSeek._usage_callback = token_usage_service.on_usage
+except Exception:
+    pass
+
 # 页面配置
 st.set_page_config(
     page_title="复合多AI智能体股票团队分析系统",
@@ -288,7 +299,7 @@ def main():
         if st.button("🏠 股票分析", width='stretch', key="nav_home", help="返回首页，进行单只股票的深度分析"):
             # 清除所有功能页面标志
             for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
-                       'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull', 'show_news_flow', 'show_macro_cycle', 'show_value_stock']:
+                       'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull', 'show_news_flow', 'show_macro_cycle', 'show_value_stock', 'show_token_usage']:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -389,6 +400,15 @@ def main():
                            'show_config', 'show_sector_strategy', 'show_smart_monitor', 'show_low_price_bull', 'show_news_flow']:
                     if key in st.session_state:
                         del st.session_state[key]
+
+        # 📊 Token用量
+        if st.button("📊 Token用量", width='stretch', key="nav_token_usage", help="查看AI调用Token消耗和费用统计"):
+            st.session_state.show_token_usage = True
+            for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
+                       'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_smart_monitor',
+                       'show_low_price_bull', 'show_news_flow', 'show_macro_cycle']:
+                if key in st.session_state:
+                    del st.session_state[key]
 
         st.markdown("---")
 
@@ -564,6 +584,12 @@ def main():
         display_macro_cycle()
         return
     
+    # 检查是否显示Token用量
+    if 'show_token_usage' in st.session_state and st.session_state.show_token_usage:
+        from ui.token_usage_ui import display_token_usage
+        display_token_usage()
+        return
+
     # 检查是否显示环境配置
     if 'show_config' in st.session_state and st.session_state.show_config:
         display_config_manager()

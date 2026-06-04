@@ -5,7 +5,8 @@ from core import config
 
 class DeepSeekClient:
     """DeepSeek API客户端"""
-    
+    _usage_callback = None  # Token用量追踪回调（可插拔）
+
     def __init__(self, model=None):
         self.model = model or config.DEFAULT_MODEL_NAME
         self.client = openai.OpenAI(
@@ -30,7 +31,14 @@ class DeepSeekClient:
                 temperature=temperature,
                 max_tokens=max_tokens
             )
-            
+
+            # Token用量追踪回调
+            if self._usage_callback and response.usage:
+                try:
+                    self._usage_callback(response.usage, model_to_use, 'openai_sdk')
+                except Exception:
+                    pass
+
             # 处理 reasoner 模型的响应
             message = response.choices[0].message
             

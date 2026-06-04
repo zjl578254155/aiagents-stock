@@ -26,6 +26,9 @@ MINIQMT_CONFIG = {
     'port': int(os.getenv("MINIQMT_PORT", "58610")),
 }
 
+# Token用量追踪（可插拔）
+TOKEN_TRACKING_ENABLED = os.getenv("TOKEN_TRACKING_ENABLED", "true").lower() == "true"
+
 # TDX股票数据API配置项目地址github.com/oficcejo/tdx-api
 TDX_CONFIG = {
     'enabled': os.getenv("TDX_ENABLED", "false").lower() == "true",

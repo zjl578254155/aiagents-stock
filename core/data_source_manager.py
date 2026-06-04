@@ -13,7 +13,7 @@ load_dotenv()
 
 
 class DataSourceManager:
-    """数据源管理器 - 实现akshare与tushare自动切换"""
+    """数据源管理器 - 实现多数据源自动切换（东方财富→新浪→腾讯→Tushare）"""
     
     def __init__(self):
         self.tushare_token = os.getenv('TUSHARE_TOKEN', '')
@@ -34,9 +34,18 @@ class DataSourceManager:
         else:
             print("ℹ️ 未配置Tushare Token，将仅使用Akshare数据源")
     
+    def _convert_to_sina_code(self, symbol):
+        """将6位代码转换为新浪/腾讯格式（sz000001 / sh600000）"""
+        if not symbol or len(symbol) != 6:
+            return symbol
+        if symbol.startswith('6'):
+            return f"sh{symbol}"
+        else:
+            return f"sz{symbol}"
+    
     def get_stock_hist_data(self, symbol, start_date=None, end_date=None, adjust='qfq'):
         """
-        获取股票历史数据（优先akshare，失败时使用tushare）
+        获取股票历史数据（东方财富→新浪→腾讯→Tushare 四级降级）
         
         Args:
             symbol: 股票代码（6位数字）
@@ -47,6 +56,8 @@ class DataSourceManager:
         Returns:
             DataFrame: 包含日期、开盘、收盘、最高、最低、成交量等列
         """
+        import akshare as ak
+        
         # 标准化日期格式
         if start_date:
             start_date = start_date.replace('-', '')
@@ -55,10 +66,9 @@ class DataSourceManager:
         else:
             end_date = datetime.now().strftime('%Y%m%d')
         
-        # 优先使用akshare
+        # === 数据源1: 东方财富（akshare stock_zh_a_hist） ===
         try:
-            import akshare as ak
-            print(f"[Akshare] 正在获取 {symbol} 的历史数据...")
+            print(f"[Akshare-东方财富] 正在获取 {symbol} 的历史数据...")
             
             df = ak.stock_zh_a_hist(
                 symbol=symbol,
@@ -69,7 +79,6 @@ class DataSourceManager:
             )
             
             if df is not None and not df.empty:
-                # 标准化列名
                 df = df.rename(columns={
                     '日期': 'date',
                     '开盘': 'open',
@@ -84,28 +93,71 @@ class DataSourceManager:
                     '换手率': 'turnover'
                 })
                 df['date'] = pd.to_datetime(df['date'])
-                print(f"[Akshare] ✅ 成功获取 {len(df)} 条数据")
+                print(f"[Akshare-东方财富] ✅ 成功获取 {len(df)} 条数据")
                 return df
         except Exception as e:
-            print(f"[Akshare] ❌ 获取失败: {e}")
+            print(f"[Akshare-东方财富] ❌ 获取失败: {e}")
         
-        # akshare失败，尝试tushare
+        # === 数据源2: 新浪财经（akshare stock_zh_a_daily） ===
+        try:
+            sina_code = self._convert_to_sina_code(symbol)
+            print(f"[Akshare-新浪] 正在获取 {symbol} ({sina_code}) 的历史数据...")
+            
+            sina_adjust = "" if adjust == "" else "qfq" if adjust in ("qfq", "1") else "hfq"
+            df = ak.stock_zh_a_daily(
+                symbol=sina_code,
+                start_date=start_date,
+                end_date=end_date,
+                adjust=sina_adjust
+            )
+            
+            if df is not None and not df.empty:
+                df['date'] = pd.to_datetime(df['date'])
+                for col in ['open', 'high', 'low', 'close', 'volume', 'amount']:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                print(f"[Akshare-新浪] ✅ 成功获取 {len(df)} 条数据")
+                return df
+        except Exception as e:
+            print(f"[Akshare-新浪] ❌ 获取失败: {e}")
+        
+        # === 数据源3: 腾讯财经（akshare stock_zh_a_hist_tx） ===
+        try:
+            sina_code = self._convert_to_sina_code(symbol)
+            start_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}" if start_date else None
+            end_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}" if end_date else None
+            print(f"[Akshare-腾讯] 正在获取 {symbol} 的历史数据...")
+            
+            tx_adjust = "" if adjust == "" else "qfq" if adjust in ("qfq", "1") else "hfq"
+            df = ak.stock_zh_a_hist_tx(
+                symbol=sina_code,
+                start_date=start_fmt,
+                end_date=end_fmt,
+                adjust=tx_adjust
+            )
+            
+            if df is not None and not df.empty:
+                if 'volume' not in df.columns and 'amount' in df.columns:
+                    df = df.rename(columns={'amount': 'volume'})
+                df['date'] = pd.to_datetime(df['date'])
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                print(f"[Akshare-腾讯] ✅ 成功获取 {len(df)} 条数据")
+                return df
+        except Exception as e:
+            print(f"[Akshare-腾讯] ❌ 获取失败: {e}")
+        
+        # === 数据源4: Tushare ===
         if self.tushare_available:
             try:
                 print(f"[Tushare] 正在获取 {symbol} 的历史数据（备用数据源）...")
                 
-                # 转换股票代码格式（添加市场后缀）
                 ts_code = self._convert_to_ts_code(symbol)
                 
-                # 转换复权类型
                 adj_dict = {'qfq': 'qfq', 'hfq': 'hfq', '': None}
                 adj = adj_dict.get(adjust, 'qfq')
                 
-                # 格式化日期
-                start = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}" if start_date else None
-                end = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}" if end_date else None
-                
-                # 获取数据
                 df = self.tushare_api.daily(
                     ts_code=ts_code,
                     start_date=start_date,
@@ -114,7 +166,6 @@ class DataSourceManager:
                 )
                 
                 if df is not None and not df.empty:
-                    # 标准化列名和数据格式
                     df = df.rename(columns={
                         'trade_date': 'date',
                         'vol': 'volume',
@@ -122,10 +173,7 @@ class DataSourceManager:
                     })
                     df['date'] = pd.to_datetime(df['date'])
                     df = df.sort_values('date')
-                    
-                    # 转换成交量单位（tushare单位是手，转换为股）
                     df['volume'] = df['volume'] * 100
-                    # 转换成交额单位（tushare单位是千元，转换为元）
                     df['amount'] = df['amount'] * 1000
                     
                     print(f"[Tushare] ✅ 成功获取 {len(df)} 条数据")
@@ -133,7 +181,6 @@ class DataSourceManager:
             except Exception as e:
                 print(f"[Tushare] ❌ 获取失败: {e}")
         
-        # 两个数据源都失败
         print("❌ 所有数据源均获取失败")
         return None
     
@@ -207,7 +254,7 @@ class DataSourceManager:
     
     def get_realtime_quotes(self, symbol):
         """
-        获取实时行情数据（优先akshare，失败时使用tushare）
+        获取实时行情数据（东方财富→最近历史数据降级）
         
         Args:
             symbol: 股票代码
@@ -215,12 +262,12 @@ class DataSourceManager:
         Returns:
             dict: 实时行情数据
         """
+        import akshare as ak
         quotes = {}
         
-        # 优先使用akshare
+        # 数据源1: 东方财富实时行情
         try:
-            import akshare as ak
-            print(f"[Akshare] 正在获取 {symbol} 的实时行情...")
+            print(f"[Akshare-东方财富] 正在获取 {symbol} 的实时行情...")
             
             df = ak.stock_zh_a_spot_em()
             stock_df = df[df['代码'] == symbol]
@@ -240,12 +287,44 @@ class DataSourceManager:
                     'open': row['今开'],
                     'pre_close': row['昨收']
                 }
-                print(f"[Akshare] ✅ 成功获取实时行情")
+                print(f"[Akshare-东方财富] ✅ 成功获取实时行情")
                 return quotes
         except Exception as e:
-            print(f"[Akshare] ❌ 获取失败: {e}")
+            print(f"[Akshare-东方财富] ❌ 获取实时行情失败: {e}")
         
-        # akshare失败，尝试tushare
+        # 数据源2: 用最近历史数据模拟实时行情（新浪/腾讯源）
+        try:
+            print(f"[降级] 使用最近历史数据获取 {symbol} 的行情...")
+            hist_df = self.get_stock_hist_data(
+                symbol=symbol,
+                start_date=(datetime.now() - timedelta(days=7)).strftime('%Y%m%d'),
+                end_date=datetime.now().strftime('%Y%m%d'),
+                adjust='qfq'
+            )
+            if hist_df is not None and not hist_df.empty:
+                latest = hist_df.iloc[-1]
+                quotes = {
+                    'symbol': symbol,
+                    'price': latest.get('close'),
+                    'high': latest.get('high'),
+                    'low': latest.get('low'),
+                    'open': latest.get('open'),
+                    'volume': latest.get('volume'),
+                    'amount': latest.get('amount'),
+                }
+                if len(hist_df) > 1:
+                    prev = hist_df.iloc[-2]
+                    prev_close = prev.get('close')
+                    if prev_close and prev_close != 0:
+                        quotes['pre_close'] = prev_close
+                        quotes['change_percent'] = round(((latest['close'] - prev_close) / prev_close) * 100, 2)
+                        quotes['change'] = round(latest['close'] - prev_close, 2)
+                print(f"[降级] ✅ 成功从历史数据获取行情")
+                return quotes
+        except Exception as e:
+            print(f"[降级] ❌ 获取失败: {e}")
+        
+        # 数据源3: Tushare
         if self.tushare_available:
             try:
                 print(f"[Tushare] 正在获取 {symbol} 的实时行情（备用数据源）...")

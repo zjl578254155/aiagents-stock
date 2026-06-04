@@ -153,6 +153,12 @@ class ConfigManager:
                 "required": False,
                 "type": "text"
             },
+            "TOKEN_TRACKING_ENABLED": {
+                "value": "true",
+                "description": "启用Token用量追踪",
+                "required": False,
+                "type": "boolean"
+            },
         }
     
     def read_env(self) -> Dict[str, str]:
@@ -283,6 +289,11 @@ class ConfigManager:
             lines.append("# ========== 低价擒牛策略监控配置 ==========")
             lines.append(f'LOW_PRICE_BULL_SCAN_INTERVAL={config.get("LOW_PRICE_BULL_SCAN_INTERVAL", "60")}')
             lines.append(f'LOW_PRICE_BULL_HOLDING_DAYS={config.get("LOW_PRICE_BULL_HOLDING_DAYS", "5")}')
+            lines.append("")
+
+            # Token用量追踪配置
+            lines.append("# ========== Token用量追踪 ==========")
+            lines.append(f'TOKEN_TRACKING_ENABLED={config.get("TOKEN_TRACKING_ENABLED", "true")}')
 
             # 保留现有.env中不在default_config中的额外字段
             if extra_fields:

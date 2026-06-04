@@ -12,6 +12,7 @@ from core import config
 
 class SmartMonitorDeepSeek:
     """A股智能盯盘 - DeepSeek AI决策引擎"""
+    _usage_callback = None  # Token用量追踪回调（可插拔）
 
     def __init__(self, api_key: str):
         """
@@ -172,7 +173,16 @@ class SmartMonitorDeepSeek:
                 timeout=60
             )
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+
+            # Token用量追踪回调
+            if self._usage_callback and result.get('usage'):
+                try:
+                    self._usage_callback(result['usage'], model, 'requests_raw')
+                except Exception:
+                    pass
+
+            return result
         except Exception as e:
             self.logger.error(f"DeepSeek API调用失败: {e}")
             raise
