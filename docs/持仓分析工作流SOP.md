@@ -60,7 +60,8 @@
    - **驱动类型区分**：v5 价值框架只适用于【基本面驱动】标的。对【事件/概念驱动】标的（如长鑫影子股合百），价值框架会"用错尺子"——必须在结论里点明它是概念/事件股、价值逻辑是否已破坏，给用户选择权。
 
 4. **写回 DB**
-   逐只 `save_decision(code, snapshot, decision)`，decision = `{action_code, action, confidence, margin_of_safety, thesis_still_valid, reasoning}`。reasoning 里带上【驱动类型】+ 催化/政策归因要点。`push` 默认 False（不自动推飞书）。
+   一律走 `scripts/save_decisions.py`（会话生成 JSON → 脚本幂等落库 → 逐条回读校验），禁止会话内联写库（教训：2026-07-27/07-31 共四次写库因输出中断丢失）。decision = `{action_code, action, confidence, margin_of_safety, thesis_still_valid, reasoning}`。reasoning 里带上【驱动类型】+ 催化/政策归因要点。
+   **写库前必须先 SELECT 同日/近日已有记录**——可能存在另一会话已补写（教训：2026-07-29/30 两批并行会话记录与本会话评级横跳，隆基 WATCH→EXIT→WATCH）。评级与最近一条不同时，reasoning 首行注明「改评：原X→现Y，理由」，禁止无声改评。
 
 5. **组合层面汇总**
    有持仓股数(quantity)时按金额加权给：集中度、盈亏结构、降仓优先级、加仓候选。
