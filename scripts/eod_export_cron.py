@@ -20,12 +20,43 @@ os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 sys.path.insert(0, '.')
 
 
+def _ensure_tdx() -> bool:
+    """TDX 预检自愈：探测不通则拉起本地 docker 容器 tdx-api（服务加载代码表约需 1 分钟），仍不通返回 False"""
+    import subprocess
+    import time
+    import requests
+    from services.eod_analysis_service import TDX_BASE_URL
+
+    def probe() -> bool:
+        r = requests.get(f"{TDX_BASE_URL}/api/kline", params={'code': '600143', 'type': 'day'},
+                         timeout=5, proxies={'http': None, 'https': None})
+        return r.json().get('code') == 0
+
+    try:
+        if probe():
+            return True
+    except Exception:
+        pass
+    subprocess.run(['docker', 'start', 'tdx-api'], capture_output=True)
+    for _ in range(14):
+        time.sleep(5)
+        try:
+            if probe():
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def main():
     stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     if datetime.now().weekday() >= 5:
         print(f"[{stamp}] 周末，跳过")
         return
     from services.eod_analysis_service import export_snapshots, _send_webhook
+    if not _ensure_tdx():
+        _send_webhook(f"🔴 TDX 服务(docker tdx-api)自愈拉起失败 {stamp}，本次采集将使用陈旧K线缓存(标stale)")
+        print(f"[{stamp}] WARN TDX 自愈失败，继续采集（K线将为陈旧缓存）")
     today = datetime.now().strftime('%Y%m%d')
     try:
         path = export_snapshots()

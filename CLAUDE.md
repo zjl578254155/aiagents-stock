@@ -28,6 +28,8 @@ A 股持仓分析与盯盘系统。程序侧只做**数据采集 + 调度刷缓�
 | 持仓台账表 | `eod_watch_stocks`（成交后需更新） |
 | 结论落库表 | `eod_analysis_records` |
 | EOD 采集服务 | `services/eod_analysis_service.py` |
+| K线数据源（唯一来源） | 本地 docker 容器 `tdx-api`（http://127.0.0.1:8080）。探测不通先 `docker start tdx-api` 等约 60 秒再试（已设 unless-stopped 自动重启，正常无需手动） |
+| 决策写库脚本（唯一入口） | `scripts/save_decisions.py`（JSON→幂等落库→回读校验，禁止会话内联写库） |
 | 盯盘时段配置 | `monitor_schedule_config.json` |
 
 联网检索锁定国内财经源（`eastmoney.com` / `cninfo.com.cn` / `stcn.com` / `cs.com.cn` / `cnstock.com` / `sina.com.cn` / `10jqka.com.cn` / `jrj.com.cn`）；本机代理对国内站是**直连通、走代理反而失败**。
