@@ -128,6 +128,41 @@ class EODAnalysisDB:
                 if col not in existing_cols:
                     cursor.execute(f"ALTER TABLE eod_analysis_records ADD COLUMN {col} TEXT")
 
+            # 买卖点计划表：条件动作的结构化真理源（周复盘执行对账/命中率统计/条件价提醒都读它）
+            # 写入只走 scripts/portfolio_ledger.py
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS eod_action_plans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT NOT NULL,
+                    plan_date TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    condition_text TEXT NOT NULL,
+                    trigger_price REAL,
+                    qty INTEGER,
+                    status TEXT DEFAULT 'open',
+                    close_date TEXT,
+                    close_note TEXT,
+                    record_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # 成交流水表：持仓台账变更的历史真相源（台账是快照，流水是历史）
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS eod_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trade_date TEXT NOT NULL,
+                    code TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    price REAL NOT NULL,
+                    qty INTEGER NOT NULL,
+                    amount REAL,
+                    note TEXT,
+                    plan_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             conn.commit()
             print(f"[OK] EOD数据库初始化成功: {self.db_path}")
         except Exception as e:

@@ -20,9 +20,18 @@ ORDER BY code, trade_date;
 - **TRIM/EXIT**：给出后是否执行、不执行的差价
 产出一张命中率小表（档位 × 条数 × 方向正确数）。
 
-### 1b. 执行对账（治"触发点漏执行"问题族 G）
+### 1b. 执行对账（治"触发点漏执行"问题族 G）—— SQL 化（2026-07-31 起）
 
-读复盘日志上周各节的"待决策（用户）/ 观察触发点"条目，逐条问：触发条件本周是否到达？到达后用户是否操作？未操作的差价是多少？——结果如实记录，不粉饰。
+```sql
+SELECT id, code, direction, trigger_price, qty, condition_text
+FROM eod_action_plans WHERE status='open';
+```
+
+对每条 open 计划，用本周高/低价（kline 缓存）判断触发条件是否到达：
+- 到达且用户已操作 → `portfolio_ledger.py plan close --status hit_executed`（若成交已录，trade add --plan-id 会自动关）
+- 到达但未操作 → `plan close --status hit_missed --note "差价约X元"`——**漏执行差价必须量化**
+- 条件已失效/剧本已改 → `expired/cancelled` 注明原因
+新产出的条件动作当场 `plan add`。快捷对照：`portfolio_ledger.py report`（open 计划 × 实时价 × 距离）。
 
 ### 1c. 管线健康三指标
 
@@ -44,7 +53,13 @@ WHERE trade_date >= date('now','-7 days') GROUP BY news_risk_level;
 
 1. **问题族追踪表逐项更新**：`docs/问题族追踪表.md` 的每个问题族标注本月状态（复发 N 次 / 无复发 / 已关闭 / 新增族），复发的要写清哪天、什么形态。
 2. **SOP 补丁有效性**：检索本月复盘日志，统计 2d 必答模板拦截次数、"主体未核实"降级次数（= 主体校验消灭的误报数）、data_stale 触发校正次数——补丁没起作用的要么改要么撤。
-3. **四档分布漂移**：
+3. **计划命中率/执行率**（2026-07-31 起）：
+```sql
+SELECT status, COUNT(*) FROM eod_action_plans
+WHERE close_date >= date('now','start of month','-1 month') OR status='open' GROUP BY status;
+```
+执行率 = hit_executed / (hit_executed + hit_missed)；hit_missed 的差价合计就是问题族 G 的月度成本。
+4. **四档分布漂移**：
 ```sql
 SELECT action_code, COUNT(*) FROM eod_analysis_records
 WHERE trade_date >= date('now','start of month','-1 month') AND trade_date < date('now','start of month')

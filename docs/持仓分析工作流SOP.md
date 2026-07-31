@@ -62,6 +62,7 @@
 4. **写回 DB**
    一律走 `scripts/save_decisions.py`（会话生成 JSON → 脚本幂等落库 → 逐条回读校验），禁止会话内联写库（教训：2026-07-27/07-31 共四次写库因输出中断丢失）。decision = `{action_code, action, confidence, margin_of_safety, thesis_still_valid, reasoning}`。reasoning 里带上【驱动类型】+ 催化/政策归因要点。
    **写库前必须先 SELECT 同日/近日已有记录**——可能存在另一会话已补写（教训：2026-07-29/30 两批并行会话记录与本会话评级横跳，隆基 WATCH→EXIT→WATCH）。评级与最近一条不同时，reasoning 首行注明「改评：原X→现Y，理由」，禁止无声改评。
+   **条件动作必须结构化落 `eod_action_plans`**（`scripts/portfolio_ledger.py plan add`），禁止只写在 reasoning/日志文本里——"减1500@≥15.30"这类买卖点散在自由文本里永远统计不出命中率（2026-07-31 复盘结论）。用户报成交时走 `portfolio_ledger.py trade add`（自动记流水+更新台账+关闭对应计划）。
 
 5. **组合层面汇总**
    有持仓股数(quantity)时按金额加权给：集中度、盈亏结构、降仓优先级、加仓候选。
