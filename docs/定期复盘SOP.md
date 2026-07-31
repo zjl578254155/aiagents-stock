@@ -59,7 +59,9 @@ SELECT status, COUNT(*) FROM eod_action_plans
 WHERE close_date >= date('now','start of month','-1 month') OR status='open' GROUP BY status;
 ```
 执行率 = hit_executed / (hit_executed + hit_missed)；hit_missed 的差价合计就是问题族 G 的月度成本。
-4. **四档分布漂移**：
+4. **WATCH 超期清单（v6）**：列出连续 ≥4 周维持 WATCH 且升降级条件未触发的持仓，**强制二选一**（升 HOLD 或降 EXIT/TRIM），不许续挂——治"WATCH 逃避舱"（基线：2026-06/07 WATCH 占 47.8% 且无一条带出口）。
+5. **confidence 校准（v6）**：按置信度分桶（≥7 / 4-6 / ≤3）统计当月决策的方向正确率；连续两个月高置信桶胜率不高于低置信桶（倒挂）→ 修正打分习惯。让 confidence 从修辞变成概率。
+6. **四档分布漂移**：
 ```sql
 SELECT action_code, COUNT(*) FROM eod_analysis_records
 WHERE trade_date >= date('now','start of month','-1 month') AND trade_date < date('now','start of month')
