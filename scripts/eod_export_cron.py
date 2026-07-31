@@ -74,8 +74,13 @@ def main():
         print(msg)
     except Exception as e:
         print(f"[{stamp}] FAIL {e!r}")
-        _send_webhook(f"🔴 EOD 快照兜底采集失败 {stamp}\n{e!r}\n请检查 TDX 服务(192.168.1.222:8181)与网络")
+        _send_webhook(f"🔴 EOD 快照兜底采集失败 {stamp}\n{e!r}\n请检查 TDX 服务(docker tdx-api)与网络")
         sys.exit(1)
+    finally:
+        # 按需启停：采集结束即关停 TDX 容器，不留空跑（unless-stopped 尊重手动 stop，不会拉回来）
+        import subprocess
+        subprocess.run(['docker', 'stop', 'tdx-api'], capture_output=True)
+        print(f"[{stamp}] TDX 容器已按需关停")
 
 
 if __name__ == '__main__':
