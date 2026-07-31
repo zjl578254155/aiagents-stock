@@ -31,8 +31,8 @@ try:
         from interfaces.smart_monitor_deepseek import SmartMonitorDeepSeek
         DeepSeekClient._usage_callback = token_usage_service.on_usage
         SmartMonitorDeepSeek._usage_callback = token_usage_service.on_usage
-except Exception:
-    pass
+except Exception as e:
+    print(f"[Warning] Token追踪初始化失败: {e}")
 
 # 页面配置
 st.set_page_config(
@@ -299,7 +299,9 @@ def main():
         if st.button("🏠 股票分析", width='stretch', key="nav_home", help="返回首页，进行单只股票的深度分析"):
             # 清除所有功能页面标志
             for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
-                       'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull', 'show_news_flow', 'show_macro_cycle', 'show_value_stock', 'show_token_usage']:
+                       'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
+                       'show_news_flow', 'show_macro_cycle', 'show_value_stock', 'show_token_usage',
+                       'show_eod_analysis', 'show_intraday']:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -387,17 +389,39 @@ def main():
                     if key in st.session_state:
                         del st.session_state[key]
 
-            if st.button("🤖 AI盯盘", width='stretch', key="nav_smart_monitor", help="DeepSeek AI自动盯盘决策交易（支持A股T+1）"):
-                st.session_state.show_smart_monitor = True
+            # 「AI盯盘」入口默认隐藏（2026-07-31）：DeepSeek 自动决策 + miniQMT 真实下单链路
+            # 与 CLAUDE.md「不内嵌 LLM 自动判断」定位冲突，且为资金/密钥风险面。
+            # 代码保留，需要时设置环境变量 SHOW_LEGACY_AI_MONITOR=true 恢复入口。
+            if os.getenv('SHOW_LEGACY_AI_MONITOR', 'false').lower() == 'true':
+                if st.button("🤖 AI盯盘", width='stretch', key="nav_smart_monitor", help="DeepSeek AI自动盯盘决策交易（支持A股T+1）"):
+                    st.session_state.show_smart_monitor = True
+                    for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
+                               'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
+                               'show_news_flow', 'show_eod_analysis', 'show_intraday']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+
+            if st.button("📋 持仓逻辑", width='stretch', key="nav_eod_analysis", help="日终持仓逻辑评估 · HOLD/TRIM/WATCH/EXIT"):
+                st.session_state.show_eod_analysis = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
-                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull', 'show_news_flow']:
+                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_smart_monitor',
+                           'show_low_price_bull', 'show_news_flow', 'show_intraday']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+            if st.button("📈 日内信号", width='stretch', key="nav_intraday", help="日内实时交易时机信号 · 结合EOD决策给出买卖时机建议"):
+                st.session_state.show_intraday = True
+                for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
+                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_smart_monitor',
+                           'show_low_price_bull', 'show_news_flow', 'show_eod_analysis']:
                     if key in st.session_state:
                         del st.session_state[key]
 
             if st.button("📡 实时监测", width='stretch', key="nav_monitor", help="价格监控与预警提醒"):
                 st.session_state.show_monitor = True
                 for key in ['show_history', 'show_main_force', 'show_longhubang', 'show_portfolio',
-                           'show_config', 'show_sector_strategy', 'show_smart_monitor', 'show_low_price_bull', 'show_news_flow']:
+                           'show_config', 'show_sector_strategy', 'show_smart_monitor',
+                           'show_low_price_bull', 'show_news_flow', 'show_eod_analysis', 'show_intraday']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -406,7 +430,7 @@ def main():
             st.session_state.show_token_usage = True
             for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                        'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_smart_monitor',
-                       'show_low_price_bull', 'show_news_flow', 'show_macro_cycle']:
+                       'show_low_price_bull', 'show_news_flow', 'show_macro_cycle', 'show_eod_analysis', 'show_intraday']:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -416,7 +440,8 @@ def main():
         if st.button("📖 历史记录", width='stretch', key="nav_history", help="查看历史分析记录"):
             st.session_state.show_history = True
             for key in ['show_monitor', 'show_longhubang', 'show_portfolio', 'show_config',
-                       'show_main_force', 'show_sector_strategy', 'show_low_price_bull', 'show_news_flow']:
+                       'show_main_force', 'show_sector_strategy', 'show_low_price_bull',
+                       'show_news_flow', 'show_eod_analysis', 'show_intraday']:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -565,6 +590,18 @@ def main():
     # 检查是否显示AI盯盘
     if 'show_smart_monitor' in st.session_state and st.session_state.show_smart_monitor:
         smart_monitor_ui()
+        return
+
+    # 检查是否显示持仓逻辑评估
+    if 'show_eod_analysis' in st.session_state and st.session_state.show_eod_analysis:
+        from ui.eod_analysis_ui import display_eod_analysis
+        display_eod_analysis()
+        return
+
+    # 检查是否显示日内实时交易信号
+    if 'show_intraday' in st.session_state and st.session_state.show_intraday:
+        from ui.intraday_ui import display_intraday
+        display_intraday()
         return
 
     # 检查是否显示持仓分析

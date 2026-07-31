@@ -79,7 +79,7 @@ def _tab_dashboard():
         with st.expander(f"{icon} {r['name']}（{code}）— {action}  盈亏: {pnl_str}", expanded=(action in ('EXIT', 'WATCH'))):
             c1, c2, c3 = st.columns(3)
             with c1:
-                st.metric("当前价", f"¥{r.get('close_price', 0):.2f}")
+                st.metric("当前价", f"¥{(r.get('close_price') or 0):.2f}")
                 st.metric("触发类型", r.get('trigger_type', '-'))
             with c2:
                 st.metric("净利率", f"{net_margin:.1f}%" if net_margin else "N/A")
@@ -88,7 +88,7 @@ def _tab_dashboard():
                 st.metric("vs MA250", f"{vs_ma250:+.1f}%" if vs_ma250 is not None else "N/A")
                 st.metric("安全边际", r.get('margin_of_safety', 'N/A'))
 
-            st.markdown(f"**判断（置信度 {r.get('confidence', 0):.1f}/10）：** {r.get('action', '')}")
+            st.markdown(f"**判断（置信度 {(r.get('confidence') or 0):.1f}/10）：** {r.get('action', '')}")
             st.markdown(f"**理由：** {r.get('reasoning', '')}")
 
             if r.get('event_summary'):
@@ -170,9 +170,13 @@ def _tab_stock_management():
                 with c1:
                     edit_cost = st.number_input("成本价", value=float(stock.get('cost_price') or 0), min_value=0.0, step=0.01)
                     edit_qty = st.number_input("数量", value=int(stock.get('quantity') or 0), min_value=0, step=100)
+                    # DB 历史数据存在'牌照'别名，需映射到'牌照/特许'，否则编辑保存会被静默改成'其他'
+                    moat_current = stock.get('moat_type', '其他')
+                    if moat_current == '牌照':
+                        moat_current = '牌照/特许'
                     edit_moat = st.selectbox("护城河", MOAT_TYPES,
-                                             index=MOAT_TYPES.index(stock.get('moat_type', '其他'))
-                                             if stock.get('moat_type') in MOAT_TYPES else len(MOAT_TYPES)-1)
+                                             index=MOAT_TYPES.index(moat_current)
+                                             if moat_current in MOAT_TYPES else len(MOAT_TYPES)-1)
                 with c2:
                     edit_thesis = st.text_input("买入逻辑", value=stock.get('thesis', ''))
                     edit_val = st.text_input("估值基准", value=stock.get('valuation_basis', ''))

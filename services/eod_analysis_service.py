@@ -318,6 +318,10 @@ def scan_news_risk(code: str, _text: Optional[str] = None) -> Tuple[str, str, bo
       - '未抓到' = 新闻源没返回任何文本(可能是源故障/接口失效)，新闻信号不可信。
     区分二者，分析侧才能识别"这只票需人工联网兜底"，避免把"源坏了"误读成"没坏消息"。
 
+    '警告' 要求命中行内含本股简称：名称近似的其他主体新闻（如科博达×ST柯利达、
+    恒顺醋业×恒顺众昇两例张冠李戴）会命中关键词但不含本股名，降级为'关注'待人工核实，
+    避免误报把'警告'级别淹没（6-7月实测 45% 记录被打警告，信号已失效）。
+
     _text: 预先拉取的新闻文本，传入后跳过内部 _fetch_news_text，避免 build_snapshot 二次拉取。
     """
     text = _text if _text is not None else _fetch_news_text(code)
@@ -325,13 +329,26 @@ def scan_news_risk(code: str, _text: Optional[str] = None) -> Tuple[str, str, bo
         logger.warning("scan_news_risk: code=%s 未抓到任何新闻/公告，新闻信号置为'未抓到'", code)
         return '未抓到', '新闻源未返回数据，需人工联网核实', False
 
-    risk_hits = [kw for kw in HIGH_RISK_KEYWORDS if kw in text]
+    stock_name = (eod_analysis_db.get_watch_stock(code) or {}).get('name', '')
+    lines = [ln for ln in text.split('\n') if ln.strip()]
+    risk_hits = []          # 关键词命中且行内含本股简称
+    unattributed_hits = []  # 关键词命中但行内无本股简称（主体串扰高发区）
+    for kw in HIGH_RISK_KEYWORDS:
+        matched = [ln for ln in lines if kw in ln]
+        if not matched:
+            continue
+        if not stock_name or any(stock_name in ln for ln in matched):
+            risk_hits.append(kw)
+        else:
+            unattributed_hits.append(kw)
     pos_hits = [kw for kw in POSITIVE_KEYWORDS if kw in text]
 
     if risk_hits:
         level = '警告'
         summary = '风险信号: ' + ', '.join(risk_hits[:3])
         return level, summary, True
+    if unattributed_hits:
+        return '关注', '疑似风险(主体未核实): ' + ', '.join(unattributed_hits[:3]), True
     if pos_hits:
         level = '利好'
         summary = '正面信号: ' + ', '.join(pos_hits[:3])
@@ -343,6 +360,58 @@ def scan_news_risk(code: str, _text: Optional[str] = None) -> Tuple[str, str, bo
     if ann_hits:
         return '关注', '有公告: ' + ', '.join(ann_hits[:3]), True
     return '无', '', False
+
+
+# ==================== 估值三字段（docs/快照估值字段补全方案.md T2） ====================
+
+def _tencent_code(code: str) -> Optional[str]:
+    if code.startswith('6'):
+        return f'sh{code}'
+    if code.startswith(('0', '3')):
+        return f'sz{code}'
+    return None
+
+
+def fetch_valuation_batch(codes: List[str]) -> Dict[str, Dict]:
+    """腾讯行情批量取 pe_ttm / pb / market_cap_yi（一次请求全部代码，按 code 分发）。
+    字段位 f[39]=PE(TTM，亏损为负) f[45]=总市值(亿) f[46]=PB，仅经 2026-06-11/12 实测，
+    附合理性断言（PB∈(0,100)、市值>0）兜底；接口失败三字段置 None，不阻塞快照导出。"""
+    result: Dict[str, Dict] = {c: {'pe_ttm': None, 'pb': None, 'market_cap_yi': None} for c in codes}
+    prefixed = [p for p in (_tencent_code(c) for c in codes) if p]
+    if not prefixed:
+        return result
+    try:
+        # 国内站必须直连：本机全局代理对 qt.gtimg.cn 会 SSL 失败，显式绕过代理
+        resp = requests.get(f"https://qt.gtimg.cn/q={','.join(prefixed)}", timeout=10,
+                            proxies={'http': None, 'https': None})
+        resp.encoding = 'gbk'
+        for line in resp.text.strip().split(';'):
+            line = line.strip()
+            if '=' not in line:
+                continue
+            head, body = line.split('=', 1)
+            f = body.strip('"').split('~')
+            if len(f) < 47:
+                continue
+            code = head.split('_')[-1][2:]
+
+            def _num(s):
+                try:
+                    return float(s)
+                except (TypeError, ValueError):
+                    return None
+
+            pe, cap, pb = _num(f[39]), _num(f[45]), _num(f[46])
+            if pb is not None and not (0 < pb < 100):
+                logger.warning(f"[{code}] PB={pb} 未过合理性断言，置None（疑字段位漂移）")
+                pb = None
+            if cap is not None and cap <= 0:
+                cap = None
+            if code in result:
+                result[code] = {'pe_ttm': pe, 'pb': pb, 'market_cap_yi': cap}
+    except Exception as e:
+        logger.warning(f"估值三字段批量获取失败（置None不阻塞）: {e}")
+    return result
 
 
 # ==================== 触发判断 ====================
@@ -397,9 +466,9 @@ def _format_notification(stock: Dict, record: Dict) -> str:
         f"{icon} 【持仓逻辑评估】{record['name']}({record['code']})",
         f"决策: {record.get('action_code')} — {record.get('action')}",
         f"触发: {record.get('trigger_type')}  交易日: {record.get('trade_date')}",
-        f"当前价: ¥{record.get('close_price', 0):.2f}  持仓盈亏: {pnl_str}",
+        f"当前价: ¥{(record.get('close_price') or 0):.2f}  持仓盈亏: {pnl_str}",
         f"净利率: {str(round(record['net_margin'], 1)) + '%' if record.get('net_margin') else 'N/A'}  ROE趋势: {record.get('roe_trend', 'N/A')}",
-        f"安全边际: {record.get('margin_of_safety', 'N/A')}  置信度: {record.get('confidence', 0):.1f}/10",
+        f"安全边际: {record.get('margin_of_safety', 'N/A')}  置信度: {(record.get('confidence') or 0):.1f}/10",
         f"理由: {record.get('reasoning', '')}",
     ]
     if record.get('event_summary'):
@@ -488,6 +557,11 @@ def build_snapshot(code: str, trigger_type: Optional[str] = None,
         'news_risk_level': news_risk_level,
         'event_summary': event_summary,
         'news_text': news_text,
+        # 数据新鲜度：trade_date 为 K 线缓存最新交易日；工作日快照滞后于今日即标 stale，
+        # 分析侧见 True 必须用行情接口取实时/收盘价校正，禁止直接采信 close_price
+        'snapshot_generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'data_stale': (datetime.now().weekday() < 5
+                       and tech.get('trade_date', '') < datetime.now().strftime('%Y-%m-%d')),
         # 口径提醒（供阅读者遵循）
         'caliber_note': '季报为YTD累计值，不可与年度门槛(如ROE≥15%)直接比较；长期水平看年报序列，最新动能看同比。',
     }
@@ -511,6 +585,11 @@ def export_snapshots(codes: Optional[List[str]] = None, force: bool = True) -> s
                 snapshots.append(snap)
         except Exception as e:
             logger.error(f"[{code}] 快照采集异常: {e}")
+
+    # 估值三字段批量合并（一次请求，按 code 分发）
+    valuations = fetch_valuation_batch([s['code'] for s in snapshots])
+    for snap in snapshots:
+        snap.update(valuations.get(snap['code'], {'pe_ttm': None, 'pb': None, 'market_cap_yi': None}))
 
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
     path = os.path.join(SNAPSHOT_DIR, f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M')}.json")
@@ -554,6 +633,10 @@ def save_decision(code: str, snapshot: Dict, decision: Dict, push: bool = False)
         'confidence': decision.get('confidence', 5.0),
         'margin_of_safety': decision.get('margin_of_safety', '未知'),
         'reasoning': decision.get('reasoning', ''),
+        # 决策输入可还原：Claude 决策时看到的关键输入随记录落库
+        'news_text': snapshot.get('news_text', ''),
+        'thesis': snapshot.get('thesis', ''),
+        'invalidation_condition': snapshot.get('invalidation_condition', ''),
         'created_at': datetime.now(),
     }
     rec_id = eod_analysis_db.save_analysis_record(record)

@@ -121,6 +121,13 @@ class EODAnalysisDB:
                 ON eod_analysis_records(code, trade_date DESC)
             ''')
 
+            # 增量迁移：决策输入可还原三列（2026-07-31，历史行为 NULL）
+            existing_cols = {r[1] for r in cursor.execute(
+                "PRAGMA table_info(eod_analysis_records)").fetchall()}
+            for col in ('news_text', 'thesis', 'invalidation_condition'):
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE eod_analysis_records ADD COLUMN {col} TEXT")
+
             conn.commit()
             print(f"[OK] EOD数据库初始化成功: {self.db_path}")
         except Exception as e:
@@ -321,13 +328,15 @@ class EODAnalysisDB:
                  ma60, ma250, vs_ma250_pct, latest_report_date, net_margin, debt_ratio,
                  roe_approx, roe_trend, has_major_event, event_summary, news_risk_level,
                  thesis_still_valid, action_code, action, confidence, margin_of_safety,
-                 reasoning, created_at)
+                 reasoning, news_text, thesis, invalidation_condition, created_at)
                 VALUES (:code, :name, :trade_date, :trigger_type, :close_price, :cost_price,
                         :pnl_pct, :ma60, :ma250, :vs_ma250_pct, :latest_report_date,
                         :net_margin, :debt_ratio, :roe_approx, :roe_trend, :has_major_event,
                         :event_summary, :news_risk_level, :thesis_still_valid, :action_code,
-                        :action, :confidence, :margin_of_safety, :reasoning, :created_at)
-            ''', {**record, 'created_at': record.get('created_at', datetime.now())})
+                        :action, :confidence, :margin_of_safety, :reasoning,
+                        :news_text, :thesis, :invalidation_condition, :created_at)
+            ''', {'news_text': '', 'thesis': '', 'invalidation_condition': '',
+                  **record, 'created_at': record.get('created_at', datetime.now())})
             conn.commit()
             return cursor.lastrowid
         finally:
