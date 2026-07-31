@@ -38,7 +38,7 @@ WHERE trade_date >= date('now','-7 days') GROUP BY news_risk_level;
 
 ### 产出
 
-复盘日志追加 `## YYYY-MM-DD 周复盘` 节（命中率表 + 执行对账 + 管线健康 + 本周新教训）；发现新事故 → 当场给 SOP/纪律打补丁并 git commit；未完事项写入 Obsidian `待办/投资复盘待办.md`。
+复盘日志追加 `## YYYY-MM-DD 周复盘` 节（命中率表 + 执行对账 + 管线健康 + 本周新教训）；发现新事故 → 当场给 SOP/纪律打补丁并 git commit；未完事项写入 Obsidian `待办/投资复盘待办.md`——其中**需要用户选择/填值的一律写成决策表行**（格式见 `待办/README.md`：选项显式枚举、「你的选择」留空、状态 ⏳），简单勾选类才用 checkbox。
 
 ## 二、月复盘（每月初）
 
