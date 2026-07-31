@@ -19,3 +19,5 @@ TradEnv/
 /.idea/modules.xml
 /.idea/vcs.xml
 /data/
+# 环境变量备份等衍生文件（防密钥泄露）
+.env.*
