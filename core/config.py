@@ -19,11 +19,16 @@ DEFAULT_PERIOD = "1y"  # 默认获取1年数据
 DEFAULT_INTERVAL = "1d"  # 默认日线数据
 
 # MiniQMT量化交易配置
+try:
+    _miniqmt_port = int(os.getenv("MINIQMT_PORT", "58610"))
+except (ValueError, TypeError):
+    _miniqmt_port = 58610
+
 MINIQMT_CONFIG = {
     'enabled': os.getenv("MINIQMT_ENABLED", "false").lower() == "true",
     'account_id': os.getenv("MINIQMT_ACCOUNT_ID", ""),
     'host': os.getenv("MINIQMT_HOST", "127.0.0.1"),
-    'port': int(os.getenv("MINIQMT_PORT", "58610")),
+    'port': _miniqmt_port,
 }
 
 # Token用量追踪（可插拔）

@@ -10,6 +10,7 @@ EOD持仓逻辑评估服务（数据采集层）
 import json
 import logging
 import os
+import sys
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -436,7 +437,12 @@ def check_trigger(code: str, tech: Dict, is_weekend: bool = False,
 
 # ==================== 通知 ====================
 
-def _send_webhook(content: str) -> bool:
+_CARD_TEMPLATE = {'error': 'red', 'warn': 'orange', 'info': 'blue'}
+
+
+def _send_webhook(content: str, title: str = None, level: str = 'info') -> bool:
+    """title 为空时保持旧行为发纯文本；传 title 且渠道为飞书时发 interactive 卡片。
+    content 为卡片 markdown，行内 '---' 单独成行会渲染为分割线。"""
     from dotenv import load_dotenv
     load_dotenv()
     webhook_url = os.getenv('WEBHOOK_URL', '')
@@ -444,14 +450,35 @@ def _send_webhook(content: str) -> bool:
     if not os.getenv('WEBHOOK_ENABLED', 'false').lower() == 'true' or not webhook_url:
         return False
     try:
-        if webhook_type == 'feishu':
+        if webhook_type == 'feishu' and title:
+            elements = []
+            for seg in content.split('\n---\n'):
+                if elements:
+                    elements.append({'tag': 'hr'})
+                elements.append({'tag': 'markdown', 'content': seg})
+            payload = {'msg_type': 'interactive', 'card': {
+                'config': {'wide_screen_mode': True},
+                'header': {'template': _CARD_TEMPLATE.get(level, 'blue'),
+                           'title': {'tag': 'plain_text', 'content': title}},
+                'elements': elements,
+            }}
+        elif webhook_type == 'feishu':
             payload = {'msg_type': 'text', 'content': {'text': content}}
         else:
-            payload = {'msgtype': 'text', 'text': {'content': content}}
+            text = f"[{title}]\n{content}" if title else content
+            payload = {'msgtype': 'text', 'text': {'content': text}}
         resp = requests.post(webhook_url, json=payload, timeout=10)
-        return resp.status_code == 200
+        if resp.status_code != 200:
+            print(f"[webhook] HTTP {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
+            return False
+        body = resp.json() if resp.headers.get('content-type', '').startswith('application/json') else {}
+        if body.get('code', 0) != 0:  # 飞书对非法/被拒消息也回 HTTP 200，错误码在 body 里
+            print(f"[webhook] 飞书拒绝: {resp.text[:200]}", file=sys.stderr)
+            return False
+        return True
     except Exception as e:
         logger.error(f"Webhook send failed: {e}")
+        print(f"[webhook] 异常: {e!r}", file=sys.stderr)
         return False
 
 

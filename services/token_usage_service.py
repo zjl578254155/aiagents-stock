@@ -90,7 +90,7 @@ class TokenUsageService:
             cost = self._calculate_cost(model, prompt_tokens, completion_tokens)
 
             self._db.record_usage(
-                timestamp=datetime.now().isoformat(),
+                timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 model=model,
                 feature=feature,
                 caller=caller,

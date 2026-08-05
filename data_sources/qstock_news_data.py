@@ -3,6 +3,7 @@
 使用akshare获取股票的最新新闻信息（替代qstock）
 """
 
+import logging
 import pandas as pd
 import sys
 import io
@@ -11,6 +12,7 @@ from datetime import datetime, timedelta
 import akshare as ak
 
 warnings.filterwarnings('ignore')
+logger = logging.getLogger(__name__)
 
 # 设置标准输出编码为UTF-8（仅在命令行环境，避免streamlit冲突）
 def _setup_stdout_encoding():
@@ -37,7 +39,7 @@ class QStockNewsDataFetcher:
     def __init__(self):
         self.max_items = 30  # 最多获取的新闻数量
         self.available = True
-        print("✓ 新闻数据获取器初始化成功（akshare数据源）")
+        logger.debug("新闻数据获取器初始化成功（akshare数据源）")
     
     def get_stock_news(self, symbol):
         """
@@ -67,19 +69,18 @@ class QStockNewsDataFetcher:
         
         try:
             # 获取新闻数据
-            print(f"📰 正在使用qstock获取 {symbol} 的最新新闻...")
+            logger.debug("正在获取 %s 的最新新闻...", symbol)
             news_data = self._get_news_data(symbol)
             
             if news_data:
                 data["news_data"] = news_data
-                print(f"   ✓ 成功获取 {len(news_data.get('items', []))} 条新闻")
+                logger.info("[%s] 成功获取 %d 条新闻", symbol, len(news_data.get('items', [])))
                 data["data_success"] = True
-                print("✅ 新闻数据获取完成")
             else:
-                print("⚠️ 未能获取到新闻数据")
+                logger.warning("[%s] 未能获取到新闻数据", symbol)
                 
         except Exception as e:
-            print(f"❌ 获取新闻数据失败: {e}")
+            logger.error("[%s] 获取新闻数据失败: %s", symbol, e)
             data["error"] = str(e)
         
         return data
@@ -91,17 +92,21 @@ class QStockNewsDataFetcher:
     def _get_news_data(self, symbol):
         """获取新闻数据（使用akshare）"""
         try:
-            print(f"   使用 akshare 获取新闻...")
+            logger.debug("[%s] 使用 akshare 获取新闻...", symbol)
             
             news_items = []
             
             # 方法1: 尝试获取个股新闻（东方财富）
             try:
                 # stock_news_em(symbol="600519") - 东方财富个股新闻
-                df = ak.stock_news_em(symbol=symbol)
+                # 注意：akshare 内部对新闻内容做 .str.replace(r"　", ...) 清洗，
+                # pandas 3.0 默认 infer_string=True 启用 pyarrow(RE2) 后端，不支持 \u 转义会崩。
+                # 用 option_context 局部关掉 infer_string（仅作用于本次调用，不污染全局）。
+                with pd.option_context('future.infer_string', False):
+                    df = ak.stock_news_em(symbol=symbol)
                 
                 if df is not None and not df.empty:
-                    print(f"   ✓ 从东方财富获取到 {len(df)} 条新闻")
+                    logger.info("[%s] 从东方财富获取到 %d 条新闻", symbol, len(df))
                     
                     # 处理DataFrame，提取新闻
                     for idx, row in df.head(self.max_items).iterrows():
@@ -125,7 +130,7 @@ class QStockNewsDataFetcher:
                             news_items.append(item)
             
             except Exception as e:
-                print(f"   ⚠ 从东方财富获取失败: {e}")
+                logger.warning("[%s] 从东方财富获取失败: %s", symbol, e)
             
             # 方法2: 如果没有获取到，尝试获取新浪财经新闻
             if not news_items:
@@ -139,7 +144,7 @@ class QStockNewsDataFetcher:
                         match = df_info[df_info['代码'] == symbol]
                         if not match.empty:
                             stock_name = match.iloc[0]['名称']
-                            print(f"   找到股票名称: {stock_name}")
+                            logger.debug("[%s] 找到股票名称: %s", symbol, stock_name)
                     
                     # 使用股票名称搜索新闻
                     if stock_name:
@@ -147,7 +152,7 @@ class QStockNewsDataFetcher:
                         try:
                             df = ak.stock_news_sina(symbol=stock_name)
                             if df is not None and not df.empty:
-                                print(f"   ✓ 从新浪财经获取到 {len(df)} 条新闻")
+                                logger.info("[%s] 从新浪财经获取到 %d 条新闻", symbol, len(df))
                                 
                                 for idx, row in df.head(self.max_items).iterrows():
                                     item = {'source': '新浪财经'}
@@ -167,44 +172,13 @@ class QStockNewsDataFetcher:
                             pass
                 
                 except Exception as e:
-                    print(f"   ⚠ 从新浪财经获取失败: {e}")
+                    logger.warning("[%s] 从新浪财经获取失败: %s", symbol, e)
             
-            # 方法3: 尝试获取财联社电报
-            if not news_items or len(news_items) < 5:
-                try:
-                    # stock_news_cls() - 财联社电报
-                    df = ak.stock_news_cls()
-                    
-                    if df is not None and not df.empty:
-                        # 筛选包含股票代码或名称的新闻
-                        df_filtered = df[
-                            df['内容'].str.contains(symbol, na=False) |
-                            df['标题'].str.contains(symbol, na=False)
-                        ]
-                        
-                        if not df_filtered.empty:
-                            print(f"   ✓ 从财联社获取到 {len(df_filtered)} 条相关新闻")
-                            
-                            for idx, row in df_filtered.head(self.max_items - len(news_items)).iterrows():
-                                item = {'source': '财联社'}
-                                
-                                for col in df_filtered.columns:
-                                    value = row.get(col)
-                                    if value is None or (isinstance(value, float) and pd.isna(value)):
-                                        continue
-                                    try:
-                                        item[col] = str(value)
-                                    except:
-                                        item[col] = "无法解析"
-                                
-                                if len(item) > 1:
-                                    news_items.append(item)
-                
-                except Exception as e:
-                    print(f"   ⚠ 从财联社获取失败: {e}")
-            
+            # 方法3(财联社 stock_news_cls)已删除：akshare 1.18.64 该函数改名为
+            # stock_info_global_cls，且实测抓取返回 404（端点失效/反爬），属死分支。
+
             if not news_items:
-                print(f"   未找到股票 {symbol} 的新闻")
+                logger.warning("[%s] 未找到任何新闻", symbol)
                 return None
             
             # 限制数量
@@ -218,9 +192,7 @@ class QStockNewsDataFetcher:
             }
             
         except Exception as e:
-            print(f"   获取新闻数据异常: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("[%s] 获取新闻数据异常: %s", symbol, e, exc_info=True)
             return None
     
     def format_news_for_ai(self, data):

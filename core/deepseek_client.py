@@ -452,14 +452,10 @@ class DeepSeekClient:
         response = self.call_api(messages, temperature=0.3, max_tokens=4000)
         
         try:
-            # 尝试解析JSON响应
-            import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                decision_json = json.loads(json_match.group())
-                return decision_json
-            else:
-                # 如果无法解析JSON，返回文本响应
-                return {"decision_text": response}
-        except:
+            start = response.find('{')
+            end = response.rfind('}')
+            if start != -1 and end > start:
+                return json.loads(response[start:end + 1])
+            return {"decision_text": response}
+        except (json.JSONDecodeError, ValueError, AttributeError):
             return {"decision_text": response}

@@ -124,8 +124,8 @@ class DataSourceManager:
         # === 数据源3: 腾讯财经（akshare stock_zh_a_hist_tx） ===
         try:
             sina_code = self._convert_to_sina_code(symbol)
-            start_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}" if start_date else None
-            end_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}" if end_date else None
+            start_fmt = (start_date if (start_date and '-' in start_date) else f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}") if start_date else None
+            end_fmt = (end_date if (end_date and '-' in end_date) else f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}") if end_date else None
             print(f"[Akshare-腾讯] 正在获取 {symbol} 的历史数据...")
             
             tx_adjust = "" if adjust == "" else "qfq" if adjust in ("qfq", "1") else "hfq"
@@ -173,8 +173,8 @@ class DataSourceManager:
                     })
                     df['date'] = pd.to_datetime(df['date'])
                     df = df.sort_values('date')
-                    df['volume'] = df['volume'] * 100
-                    df['amount'] = df['amount'] * 1000
+                    df['volume'] = pd.to_numeric(df['volume'], errors='coerce') * 100
+                    df['amount'] = pd.to_numeric(df['amount'], errors='coerce') * 1000
                     
                     print(f"[Tushare] ✅ 成功获取 {len(df)} 条数据")
                     return df

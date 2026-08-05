@@ -42,37 +42,40 @@ class StockMonitorService:
             except Exception as e:
                 logging.warning(f"TDX数据源初始化失败，将使用默认数据源: {e}")
         
-        self.running = False
+        self._stop_event = threading.Event()
         self.thread = None
-    
+
+    @property
+    def running(self):
+        return self.thread is not None and self.thread.is_alive()
+
     def start_monitoring(self):
         """启动监测服务"""
         if self.running:
             return
-        
-        self.running = True
+
+        self._stop_event.clear()
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
         st.success("✅ 监测服务已启动")
-    
+
     def stop_monitoring(self):
         """停止监测服务"""
-        self.running = False
+        self._stop_event.set()
         if self.thread:
             self.thread.join(timeout=5)
         st.info("⏹️ 监测服务已停止")
-    
+
     def _monitor_loop(self):
         """监测循环"""
         print("监测服务已启动")
-        while self.running:
+        while not self._stop_event.is_set():
             try:
                 self._check_all_stocks()
-                # 根据最小监测间隔决定循环间隔，最少5分钟检查一次
-                time.sleep(300)  # 每5分钟检查一次
+                self._stop_event.wait(300)
             except Exception as e:
                 print(f"监测服务错误: {e}")
-                time.sleep(60)  # 错误后等待1分钟再重试
+                self._stop_event.wait(60)
     
     def _check_all_stocks(self):
         """检查所有监测股票"""

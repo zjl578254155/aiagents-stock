@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ⚠️ 已迁移：本文件为 2026-08-05 冻结镜像，现行版本在 ~/.claude/skills/stock-portfolio-analysis/scripts/，不要再改这里。
 """
 买卖点计划 + 成交流水台账脚本（eod_action_plans / eod_trades 的唯一写入口）
 

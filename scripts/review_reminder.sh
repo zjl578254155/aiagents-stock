@@ -5,16 +5,19 @@
 cd "$(dirname "$0")/.." || exit 1
 TYPE="$1"
 case "$TYPE" in
-  weekly)    MSG="📅 周复盘提醒：决策对账+执行对账+管线健康。对 Claude 说「周复盘」即可，流程见 docs/定期复盘SOP.md" ;;
-  monthly)   MSG="📅 月复盘提醒：问题族追踪表更新+SOP补丁有效性+四档分布漂移。对 Claude 说「月复盘」" ;;
-  quarterly) MSG="📅 季复盘提醒：v5框架校准+组合vs基准+台账对账。对 Claude 说「季度复盘」" ;;
+  weekly)    TITLE="📅 周复盘提醒"
+             MSG=$'**待办**：决策对账 · 执行对账 · 管线健康\n---\n**下一步**：对 Claude 说「周复盘」（流程见 docs/定期复盘SOP.md）' ;;
+  monthly)   TITLE="📅 月复盘提醒"
+             MSG=$'**待办**：问题族追踪表更新 · SOP补丁有效性 · 四档分布漂移\n---\n**下一步**：对 Claude 说「月复盘」' ;;
+  quarterly) TITLE="📅 季复盘提醒"
+             MSG=$'**待办**：v5框架校准 · 组合vs基准 · 台账对账\n---\n**下一步**：对 Claude 说「季度复盘」' ;;
   *) echo "usage: $0 weekly|monthly|quarterly"; exit 1 ;;
 esac
 
-if .venv/bin/python - "$MSG" <<'PY' >/dev/null 2>&1
+if .venv/bin/python - "$MSG" "$TITLE" <<'PY' >/dev/null 2>&1
 import sys
 from services.eod_analysis_service import _send_webhook
-sys.exit(0 if _send_webhook(sys.argv[1]) else 1)
+sys.exit(0 if _send_webhook(sys.argv[1], title=sys.argv[2], level='info') else 1)
 PY
 then
   echo "[$(date '+%F %T')] ${TYPE} 提醒已发飞书"
